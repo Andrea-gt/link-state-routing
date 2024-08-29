@@ -40,18 +40,16 @@ const login = async (username, password, names, topo, currentNode) => {
 				)
 			});
 
-		}, 15000)
+		}, 10000)
 
 	});
 
 	XMPPclient.on('stanza', async (stanza) => {
-        // Check if the stanza is an echo message
         if (stanza.is('message') && stanza.getChildText('type') === 'echo') {
             const fromNode = stanza.attrs.from.split('/')[0];
             const hops = stanza.getChildText('hops');
 
             if (hops === '1') {
-                // Send the echo message back with hop count incremented
                 XMPPclient.send(
                     xml('message', { 'to': fromNode },
                         xml('type', {}, 'echo'),
@@ -60,19 +58,16 @@ const login = async (username, password, names, topo, currentNode) => {
                     )
                 );
             } else if (hops === '2') {
-                // Calculate the round-trip time
                 const sentTime = echoTimes[fromNode];
                 if (sentTime) {
                     const roundTripTime = Date.now() - sentTime;
                     console.log(`Round-trip time to ${fromNode}: ${roundTripTime} ms`);
                     delete echoTimes[fromNode];
 
-                    // Initialize the entry for the current node if it doesn't exist
                     if (!knownTimes[names['config'][currentNode]]) {
                         knownTimes[names['config'][currentNode]] = {};
                     }
 
-                    // Update the knownTimes object with the RTT
                     knownTimes[names['config'][currentNode]][fromNode] = roundTripTime;
 
 					startFlood(XMPPclient, topo['config'][currentNode].map(node => {
@@ -83,11 +78,35 @@ const login = async (username, password, names, topo, currentNode) => {
             }
         } else if (stanza.is('message') && stanza.getChildText('type') === 'info') {
             const receivedTimes = JSON.parse(stanza.getChild('table').getText());
+
             mergeKnownTimes(receivedTimes, names['config'][currentNode]);
+
 			propagateFlood(XMPPclient, stanza, topo['config'][currentNode].map(node => {
 				return names['config'][node];
 			}));
-        }
+
+        } else if (stanza.is('message') && stanza.attrs.type === 'chat') {
+			//console.log(stanza)
+			const message = JSON.parse(stanza.getChildText('body'));
+
+			if (message.to === `${XMPPclient.jid._local}@alumchat.lol`) {
+				console.log(`\nMESSAGE RECEIVED FROM ${message.from} AFTER ${message.hops} HOPS: ${message.payload}\n`)
+			} 
+			else {
+				const nextHop = routingTable[message.to]['nextHop'];
+				console.log(`\nFORWARDING MESSAGE FROM ${stanza.attrs.from.split('/')[0]} TO ${nextHop}\n`);
+				XMPPclient.send(xml('message', { to: nextHop, type: 'chat' }, 
+					xml('body', {}, JSON.stringify({
+						type: 'message',
+						from: message.from,
+						to: message.to,
+						headers: message.headers,
+						hops: parseInt(message.hops) + 1,
+						payload: message.payload,
+					})))
+				);
+			}
+		}
     });
 
 	XMPPclient.on('error', (err) => {
@@ -98,21 +117,13 @@ const login = async (username, password, names, topo, currentNode) => {
 		console.log('Disconnected');
 	});
 
-	XMPPclient.on('status', (status) => {
-		console.log(`Status: ${status}`);
-		if (status === 'disconnect') {
-			console.log('Attempting to reconnect...');
-			XMPPclient.start();
-		}
-	});
-
 	XMPPclient.start().catch(console.error);
 
 	return XMPPclient;
 }
 
 const startFlood = (client, neighbors) => {
-	console.log('STARTING FLOOD')
+	//console.log('STARTING FLOOD')
 	neighbors.forEach(neighbor => {
 		client.send(
 			xml('message', { to: neighbor },
@@ -131,7 +142,7 @@ const startFlood = (client, neighbors) => {
 
 const propagateFlood = (client, floodMsg, neighbors) => {
 
-	console.log('PROPAGATING FLOOD')
+	//console.log('PROPAGATING FLOOD')
 	let visited = floodMsg.getChild('visited').getChildren('node').map(entry => {
 		return entry.attrs.name;
 	})
@@ -168,27 +179,28 @@ const mergeKnownTimes = async (receivedTimes, source) => {
 		}
 	}
 
-	console.log('MERGE RESULT')
-	console.log(knownTimes);
+	//console.log('MERGE RESULT')
+	//console.log(knownTimes);
 
 	routingTable = await dijkstra(knownTimes, source);
 
-	console.log('ROUTING TABLE');
+	console.log('UPDATED ROUTING TABLE');
 	console.log(routingTable);
 
 };
 
-const sendEchoMessage = (client, to) => {
-	const timestamp = Date.now();
-	echoTimes[to] = timestamp;
-
-	client.send(
-		xml('message', { 'to': to },
-			xml('type', {}, 'echo'),
-			xml('body', {}, 'echo'),
-			xml('hops', {}, '1')
-		)
+const sendMessage = (client, to, payload) => {
+	const nextHop = routingTable[`${to}@alumchat.lol`]['nextHop'];
+	client.send(xml('message', { to: nextHop, type: 'chat' }, 
+		xml('body', {}, JSON.stringify({
+			type: 'message',
+			from: `${client.jid._local}@alumchat.lol`,
+			to: `${to}@alumchat.lol`,
+			headers: [],
+			hops: 1,
+			payload: payload,
+		})))
 	);
 }
 
-module.exports = { login, sendEchoMessage };
+module.exports = { login, sendMessage };

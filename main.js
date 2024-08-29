@@ -1,4 +1,4 @@
-const { login } = require("./client");
+const { login, sendMessage } = require("./client");
 const { client, xml } = require('@xmpp/client');
 const fs = require('fs');
 const readline = require('readline');
@@ -18,11 +18,10 @@ const getInput = (query) => {
     });
 }
 
-// Function to read the file and parse the JSON content
 const loadJSONFromFile = (filename) => {
     try {
-        const data = fs.readFileSync(filename, 'utf8');  // Read the file
-        const jsonObject = JSON.parse(data);  // Parse the JSON content
+        const data = fs.readFileSync(filename, 'utf8');
+        const jsonObject = JSON.parse(data);
         return jsonObject;
     } catch (err) {
         console.error("Error reading or parsing the file", err);
@@ -37,7 +36,31 @@ const main = async () => {
 
     const currentNode = await getInput("Input the node to use in the topology: ")
 
-    const client = login(names['config'][currentNode].split('@')[0], 'g', names, topo, currentNode);
+    const client = await login(names['config'][currentNode].split('@')[0], 'g', names, topo, currentNode);
+
+    while(true){
+        
+        setTimeout(async () => {
+            console.log('----LSR CLIENT----');
+            console.log('1. Send message');
+            console.log('2. Exit');
+            console.log('Pick a menu item: ')
+        }, 1000);
+        
+        const userChoice = await getInput("");
+
+        if (userChoice === '1') {
+            const to = await getInput("Send message to (username): ");
+            const payload = await getInput("Message to send: ");
+            sendMessage(client, to, payload);
+        }
+        else {
+            break;
+        }
+
+    }
+
+    return
 
 }
 
