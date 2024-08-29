@@ -1,9 +1,11 @@
 const { client, xml } = require('@xmpp/client');
 const debug = require('@xmpp/debug');
+const { dijkstra } = require('./LSR');
 
 let XMPPclient;
 let echoTimes = {};
 let knownTimes = {};
+let routingTable = {};
 
 const login = async (username, password, names, topo, currentNode) => {
 	// Create a new XMPP client with the provided username and password
@@ -81,7 +83,7 @@ const login = async (username, password, names, topo, currentNode) => {
             }
         } else if (stanza.is('message') && stanza.getChildText('type') === 'info') {
             const receivedTimes = JSON.parse(stanza.getChild('table').getText());
-            mergeKnownTimes(receivedTimes);
+            mergeKnownTimes(receivedTimes, names['config'][currentNode]);
 			propagateFlood(XMPPclient, stanza, topo['config'][currentNode].map(node => {
 				return names['config'][node];
 			}));
@@ -120,7 +122,8 @@ const startFlood = (client, neighbors) => {
 				),
 				xml('visited', {}, 
 					neighbors.map(element => xml('node', { name: element }))
-				)
+				),
+				xml('hops', {}, 1)
 			)
 		)
 	});
@@ -144,14 +147,15 @@ const propagateFlood = (client, floodMsg, neighbors) => {
 					),
 					xml('visited', {}, 
 						newVisited.map(element => xml('node', { name: element }))
-					)
+					),
+					xml('hops', {}, parseInt(floodMsg.getChildText('hops')) + 1)
 				)
 			)
 		}
 	});
 };
 
-const mergeKnownTimes = (receivedTimes) => {
+const mergeKnownTimes = async (receivedTimes, source) => {
 	for (const node in receivedTimes) {
 		if (!knownTimes[node]) {
 			knownTimes[node] = receivedTimes[node];
@@ -166,6 +170,11 @@ const mergeKnownTimes = (receivedTimes) => {
 
 	console.log('MERGE RESULT')
 	console.log(knownTimes);
+
+	routingTable = await dijkstra(knownTimes, source);
+
+	console.log('ROUTING TABLE');
+	console.log(routingTable);
 
 };
 
