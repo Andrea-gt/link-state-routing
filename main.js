@@ -1,9 +1,10 @@
-const { login, sendMessage } = require("./client");
+const { login, sendMessage, resendEchoes, toggleLogs } = require("./client");
 const { client, xml } = require('@xmpp/client');
 const fs = require('fs');
 const readline = require('readline');
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+let routingToggle = true;
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -35,15 +36,18 @@ const main = async () => {
     console.log(names)
 
     const currentNode = await getInput("Input the node to use in the topology: ")
+    const password = await getInput("Input user password: ")
 
-    const client = await login(names['config'][currentNode].split('@')[0], 'g', names, topo, currentNode);
+    const client = await login(names['config'][currentNode].split('@')[0], password, names, topo, currentNode);
 
     while(true){
         
         setTimeout(async () => {
-            console.log('----LSR CLIENT----');
+            console.log('------- LSR CLIENT -------');
             console.log('1. Send message');
-            console.log('2. Exit');
+            console.log('2. Resend echoes');
+            console.log('3. Toggle Routing Logs')
+            console.log('4. Exit');
             console.log('Pick a menu item: ')
         }, 1000);
         
@@ -54,13 +58,19 @@ const main = async () => {
             const payload = await getInput("Message to send: ");
             sendMessage(client, to, payload);
         }
+        else if (userChoice === '2') {
+            resendEchoes(client, names, topo, currentNode);
+        }
+        else if (userChoice === '3') {
+            routingToggle = !routingToggle;
+            toggleLogs(routingToggle);
+        }
         else {
-            break;
+            client.stop();
+            process.exit(0);
         }
 
     }
-
-    return
 
 }
 

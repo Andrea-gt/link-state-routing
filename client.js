@@ -6,6 +6,7 @@ let XMPPclient;
 let echoTimes = {};
 let knownTimes = {};
 let routingTable = {};
+let logs = true;
 
 const login = async (username, password, names, topo, currentNode) => {
 	// Create a new XMPP client with the provided username and password
@@ -24,6 +25,8 @@ const login = async (username, password, names, topo, currentNode) => {
 
 		XMPPclient.send(xml('presence'));
 
+		knownTimes[names['config'][currentNode]] = {};
+
 		setTimeout(() => {
 
 			topo['config'][currentNode].forEach(element => {
@@ -40,7 +43,7 @@ const login = async (username, password, names, topo, currentNode) => {
 				)
 			});
 
-		}, 10000)
+		}, 2000)
 
 	});
 
@@ -57,6 +60,20 @@ const login = async (username, password, names, topo, currentNode) => {
                         xml('hops', {}, '2')
                     )
                 );
+
+				if (!knownTimes[names['config'][currentNode]][fromNode]) {
+					const timestamp = Date.now();
+					echoTimes[fromNode] = timestamp;
+		
+					XMPPclient.send(
+						xml('message', { 'type': 'normal', 'to': fromNode },
+							xml('type', {}, 'echo'),
+							xml('body', {}, 'echo'),
+							xml('hops', {}, '1')
+						)
+					);
+				}
+
             } else if (hops === '2') {
                 const sentTime = echoTimes[fromNode];
                 if (sentTime) {
@@ -76,16 +93,33 @@ const login = async (username, password, names, topo, currentNode) => {
 
                 }
             }
-        } else if (stanza.is('message') && stanza.getChildText('type') === 'info') {
+        } 
+		else if (stanza.is('message') && stanza.getChildText('type') === 'info') {
             const receivedTimes = JSON.parse(stanza.getChild('table').getText());
 
             mergeKnownTimes(receivedTimes, names['config'][currentNode]);
 
-			propagateFlood(XMPPclient, stanza, topo['config'][currentNode].map(node => {
-				return names['config'][node];
-			}));
+			if (!stanza.getChild('headers')) {
 
-        } else if (stanza.is('message') && stanza.attrs.type === 'chat') {
+				propagateFlood(XMPPclient, stanza, topo['config'][currentNode].map(node => {
+					return names['config'][node];
+				}));
+
+				XMPPclient.send(
+					xml('message', { to: stanza.attrs.from.split('/')[0] },
+						xml('type', {}, 'info'),
+						xml('headers', {}, ['no-flood']),
+						xml('table', {}, 
+							JSON.stringify(knownTimes)
+						),
+						xml('hops', {}, 1)
+					)
+				)
+
+			}
+
+        } 
+		else if (stanza.is('message') && stanza.attrs.type === 'chat') {
 			//console.log(stanza)
 			const message = JSON.parse(stanza.getChildText('body'));
 
@@ -93,18 +127,20 @@ const login = async (username, password, names, topo, currentNode) => {
 				console.log(`\nMESSAGE RECEIVED FROM ${message.from} AFTER ${message.hops} HOPS: ${message.payload}\n`)
 			} 
 			else {
-				const nextHop = routingTable[message.to]['nextHop'];
-				console.log(`\nFORWARDING MESSAGE FROM ${stanza.attrs.from.split('/')[0]} TO ${nextHop}\n`);
-				XMPPclient.send(xml('message', { to: nextHop, type: 'chat' }, 
-					xml('body', {}, JSON.stringify({
-						type: 'message',
-						from: message.from,
-						to: message.to,
-						headers: message.headers,
-						hops: parseInt(message.hops) + 1,
-						payload: message.payload,
-					})))
-				);
+				if (routingTable[message.to]){
+					const nextHop = routingTable[message.to]['nextHop'];
+					console.log(`\nFORWARDING MESSAGE FROM ${stanza.attrs.from.split('/')[0]} TO ${nextHop}\n`);
+					XMPPclient.send(xml('message', { to: nextHop, type: 'chat' }, 
+						xml('body', {}, JSON.stringify({
+							type: 'message',
+							from: message.from,
+							to: message.to,
+							headers: message.headers,
+							hops: parseInt(message.hops) + 1,
+							payload: message.payload,
+						})))
+					);
+				}
 			}
 		}
     });
@@ -184,9 +220,11 @@ const mergeKnownTimes = async (receivedTimes, source) => {
 
 	routingTable = await dijkstra(knownTimes, source);
 
-	console.log('UPDATED ROUTING TABLE');
-	console.log(routingTable);
-
+	if (logs) {
+		console.log('UPDATED ROUTING TABLE');
+		console.log(routingTable);
+	}
+	
 };
 
 const sendMessage = (client, to, payload) => {
@@ -201,6 +239,28 @@ const sendMessage = (client, to, payload) => {
 			payload: payload,
 		})))
 	);
+};
+
+const resendEchoes = (client, names, topo, currentNode) => {
+
+	topo['config'][currentNode].forEach(element => {
+
+		const timestamp = Date.now();
+		echoTimes[names['config'][element]] = timestamp;
+
+		client.send(
+			xml('message', { 'type': 'normal', 'to': names['config'][element] },
+				xml('type', {}, 'echo'),
+				xml('body', {}, 'echo'),
+				xml('hops', {}, '1')
+			)
+		)
+	});
+
 }
 
-module.exports = { login, sendMessage };
+const toggleLogs = (newValue) => {
+	logs = newValue;
+}
+
+module.exports = { login, sendMessage, resendEchoes, toggleLogs };
