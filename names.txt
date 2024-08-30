@@ -1,1 +1,1 @@
-{"type":"names", "config":{'A': 'grupo3@alumchat.lol', 'B': 'grupo6@alumchat.lol', 'C': 'grupo1@alumchat.lol', 'D': 'grupo4@alumchat.lol', 'E': 'grupo5@alumchat.lol', 'F': 'grupo2@alumchat.lol'} }
+{"type":"names", "config":{"A": "grupo3@alumchat.lol", "B": "grupo6@alumchat.lol", "C": "grupo1@alumchat.lol", "D": "grupo4@alumchat.lol", "E": "grupo5@alumchat.lol", "F": "grupo2@alumchat.lol"} }
