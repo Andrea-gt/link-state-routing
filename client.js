@@ -156,6 +156,9 @@ const login = async (username, password, names, topo, currentNode) => {
 						})))
 					);
 				}
+				else {
+					console.error(`\nFORWARDING ERROR: No viable route found for the message (to: ${message.to})\n`);
+				}
 			}
 		}
     });
@@ -265,6 +268,10 @@ const mergeKnownTimes = async (receivedTimes, source) => {
  * @param {string} payload - The message payload to be sent.
  */
 const sendMessage = (client, to, payload) => {
+	if (!routingTable[`${to}@alumchat.lol`]) {
+		console.log('ERROR: No viable route found for the message');
+		return;
+	}
     const nextHop = routingTable[`${to}@alumchat.lol`]['nextHop'];
     client.send(xml('message', { to: nextHop, type: 'chat' }, 
         xml('body', {}, JSON.stringify({
